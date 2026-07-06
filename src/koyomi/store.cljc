@@ -32,6 +32,7 @@
                :cljs [cljs.reader :as edn])
             [clojure.string :as str]
             [calendar.model :as cal]
+            [koyomi.model :as model]
             [langchain.db :as d]))
 
 (defprotocol Store
@@ -64,10 +65,10 @@
    {"act-board"    {:id "act-board"    :repo "cloud-itonami" :due-at "2026-07-10T09:00:00Z" :kind :board-meeting}
     "act-conflict" {:id "act-conflict" :repo "cloud-itonami" :due-at "2026-08-01T09:30:00Z" :kind :standup}}
    :contacts
-   {"att-alice"   {:attendee "att-alice"   :consent :known   :first-contact? false}
-    "att-bob"     {:attendee "att-bob"     :consent :known   :first-contact? false}
-    "att-newbiz"  {:attendee "att-newbiz"  :consent :known   :first-contact? true}
-    "att-blocked" {:attendee "att-blocked" :consent :blocked :first-contact? false}}
+   {"att-alice"   (model/contact "att-alice")
+    "att-bob"     (model/contact "att-bob")
+    "att-newbiz"  (model/contact "att-newbiz" {:first-contact? true})
+    "att-blocked" (model/contact "att-blocked" {:consent :blocked})}
    :events
    {"ev-board"
     (merge (cal/event "ev-board" {:calendar/title "Board meeting"

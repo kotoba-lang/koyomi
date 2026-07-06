@@ -16,17 +16,29 @@
 
   HARD invariants:
     :event/draft
-      1. No-actuation    — proposal :effect must be :draft, never :share (a
+      1. Subject-exists  — the driving activity (:activity on the request)
+                           must actually be registered. Unconditional —
+                           independent of/prior to the tenant check below, so
+                           a nonexistent activity can never silently no-op
+                           its way past tenant-isolation (mirrors tayori's
+                           missing-thread-violations/missing-document-
+                           violations, kekkai's key-violations `:no-node`).
+      2. No-actuation    — proposal :effect must be :draft, never :share (a
                            control-plane record, never an outbound invite).
-      2. Tenant-isolation — the proposed content's :tenant must equal the
+      3. Tenant-isolation — the proposed content's :tenant must equal the
                            tenant derived from the driving activity's :repo.
     :event/share
-      1. Consent-required — EVERY attendee on the event's content must not be
+      1. Subject-exists  — same activity-exists check as :event/draft.
+      2. Draft-exists    — there must already be a committed draft for the
+                           event (`store/draft-of`) — otherwise this would be
+                           a phantom share of nil content that still writes a
+                           false :shared/:committed ledger fact.
+      3. Consent-required — EVERY attendee on the event's content must not be
                            :consent :blocked (not just the first). A
                            :first-contact? attendee is NOT a hard violation
                            (mirrors tayori's contact model exactly) but IS
                            high-stakes below.
-      2. Tenant-isolation — same check, over the already-committed draft's
+      4. Tenant-isolation — same check, over the already-committed draft's
                            content (defense-in-depth: the same sanity check
                            applies at both the draft and the share gate).
     (any other op) — an unrecognized :op is itself a hard violation
@@ -49,6 +61,29 @@
 (def confidence-floor 0.6)
 
 ;; ───────────────────────── invariant checks ─────────────────────────
+
+(defn- missing-activity-violations
+  "Unconditional hard check: the activity-id the request claims to be driven
+  by must actually be registered. Independent of/prior to tenant-violations
+  below — `tenant-violations` only fires when `expected` (the activity's
+  repo) is truthy, so a nonexistent activity previously made it silently
+  no-op (no violation raised at all, regardless of the proposal's :tenant),
+  letting a rogue-tenant draft auto-commit. This closes that gap the same
+  way tayori's missing-thread-violations/missing-document-violations and
+  kekkai's key-violations `:no-node` do for their subjects."
+  [st activity-id]
+  (when (nil? (store/activity st activity-id))
+    [{:rule :missing-activity :detail (str "未登録の活動: " activity-id)}]))
+
+(defn- missing-draft-violations
+  "Unconditional hard check for :event/share: a draft must already exist for
+  the event. Without this, :event/share on a never-drafted event proceeds
+  with nil content all the way to commit-effects!, producing a phantom
+  empty ICS handed to the distributor and a false :shared/:committed ledger
+  fact for a share that never meaningfully happened."
+  [st event-id]
+  (when (nil? (store/draft-of st event-id))
+    [{:rule :missing-draft :detail (str "共有対象のドラフトが未作成: " event-id)}]))
 
 (defn- actuation-violations [proposal]
   (when (not= :draft (:effect proposal))
@@ -108,10 +143,13 @@
         content (content-of request proposal st)
         hard    (vec (case op
                        :event/draft
-                       (concat (actuation-violations proposal)
+                       (concat (missing-activity-violations st (:activity request))
+                               (actuation-violations proposal)
                                (tenant-violations st (:activity request) content))
                        :event/share
-                       (concat (consent-violations st content)
+                       (concat (missing-activity-violations st (:activity request))
+                               (missing-draft-violations st (:event request))
+                               (consent-violations st content)
                                (tenant-violations st (:activity request) content))
                        [{:rule :unrecognized-op :detail (str "未対応 op: " op)}]))
         conf    (:confidence proposal 0.0)

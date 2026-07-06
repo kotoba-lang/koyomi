@@ -32,21 +32,54 @@
   [iso]
   (str/replace (or iso "") #"[-:]" ""))
 
+(defn- ics-escape-text
+  "RFC 5545 §3.3.11 TEXT value escaping. Every free-text field rendered into
+  the ICS (SUMMARY, and any DESCRIPTION-equivalent) MUST go through this —
+  otherwise a raw comma/semicolon/backslash is ambiguous against the spec's
+  grammar, and worse, a raw embedded CR/LF in a TEXT value is not just
+  invalid: real ICS parsers read it as the start of a brand-new property
+  line, letting free text (e.g. an LLM-proposed event title) forge an
+  arbitrary property — concretely, a title of
+  \"Q3 Planning\\r\\nATTENDEE:mailto:attacker@evil.example\" would otherwise
+  render as two distinct ICS lines, the second a fabricated ATTENDEE the
+  consent governor never inspected (it only checks the structured
+  :calendar/attendees vector, never rendered ICS text).
+
+  Order matters: escape literal backslashes FIRST (so the backslashes this
+  fn itself inserts below aren't re-escaped), then `,` and `;`, then
+  normalize any CRLF/CR/LF down to a single logical line-break and encode it
+  as the spec's literal two-character escape `\\n` (never a raw CR/LF)."
+  [s]
+  (-> (str s)
+      (str/replace "\\" "\\\\")
+      (str/replace "," "\\,")
+      (str/replace ";" "\\;")
+      (str/replace #"\r\n|\r" "\n")
+      (str/replace "\n" "\\n")))
+
 (defn ics-string
   "A minimal RFC 5545 VCALENDAR/VEVENT string built from a calendar.model
   event EDN (:calendar/id/title/start/end/attendees). calendar.model itself
   has no export concept — this is koyomi's own, and it is the only place in
-  the actor that touches ICS."
+  the actor that touches ICS.
+
+  ATTENDEE lines are built ONLY from the structured `attendees` vector — the
+  same :calendar/attendees the governor's consent-violations/tenant-
+  violations already censored — never by concatenating attendee data through
+  the free-text path SUMMARY uses; escaping SUMMARY (via ics-escape-text)
+  independently guarantees free text can never spill into a new property
+  line, so the attendee count/identity here is exactly what was governed,
+  never more."
   [{:calendar/keys [id title start end attendees] :as _event}]
   (str/join "\r\n"
     (concat
       ["BEGIN:VCALENDAR" "VERSION:2.0" "PRODID:-//kotoba-lang//koyomi//EN"
        "BEGIN:VEVENT"
-       (str "UID:" id "@koyomi.kotoba-lang")
-       (str "SUMMARY:" title)
+       (str "UID:" (ics-escape-text id) "@koyomi.kotoba-lang")
+       (str "SUMMARY:" (ics-escape-text title))
        (str "DTSTART:" (ics-date start))
        (str "DTEND:" (ics-date end))]
-      (map #(str "ATTENDEE:mailto:" %) attendees)
+      (map #(str "ATTENDEE:mailto:" (ics-escape-text %)) attendees)
       ["END:VEVENT" "END:VCALENDAR" ""])))
 
 ;; ───────────────────────── mock (default, runnable offline) ─────────────────────────

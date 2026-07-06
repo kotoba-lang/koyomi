@@ -130,6 +130,65 @@
       (is (= :hold (get-in res [:state :disposition])))
       (is (some #{:unrecognized-op} (-> (store/ledger s) last :basis))))))
 
+(deftest missing-activity-is-held-even-with-rogue-tenant
+  (testing "a nonexistent activity-id is a hard violation on its own — it must never silently
+            no-op tenant-isolation and let a rogue :tenant auto-commit"
+    (let [[s _] (fresh)
+          bad-adv (reify coordllm/Advisor
+                    (-advise [_ _ _] {:recommendation :draft
+                                      :content {:calendar/id "ev-board" :calendar/attendees ["att-alice"]
+                                                :tenant "rogue-tenant"}
+                                      :effect :draft :summary "x" :rationale "x"
+                                      :cites [] :redactions [] :confidence 0.9}))
+          actor (op/build s {:advisor bad-adv})
+          res (g/run* actor {:request {:op :event/draft :activity "act-missing" :event "ev-board"} :context (ctx 3)}
+                      {:thread-id "ma"})]
+      (is (not= :interrupted (:status res)) "hard violations hold directly, no approval offered")
+      (is (= :hold (get-in res [:state :disposition])))
+      (is (some #{:missing-activity} (-> (store/ledger s) last :basis))
+          "the previously-silent nil-activity no-op is now a hard :missing-activity violation"))))
+
+(deftest share-without-prior-draft-is-held-not-a-phantom-share
+  (testing ":event/share on an event that was never drafted must HOLD, not send a phantom
+            nil-content ICS + write a false :shared/:committed ledger fact"
+    (let [[s actor _shared distributed] (fresh)
+          res (run actor "nodraft" {:op :event/share :activity "act-board" :event "ev-board"} 3)
+          ledger (store/ledger s)]
+      (is (not= :interrupted (:status res)) "hard violations hold directly, no approval offered")
+      (is (= :hold (get-in res [:state :disposition])))
+      (is (some #{:missing-draft} (-> ledger last :basis)))
+      (is (nil? (:status (store/draft-of s "ev-board"))) "no draft was ever fabricated")
+      (is (empty? @distributed) "the distributor was never invoked for a phantom share")
+      (is (not-any? #{:committed} (map :t ledger)) "no false :committed ledger fact was written"))))
+
+(deftest share-uses-governed-content-not-a-stale-commit-time-store-read
+  (testing "TOCTOU: mutating the stored draft's attendees WHILE a share approval is pending
+            (e.g. a legitimate concurrent :event/draft revision on the same event) must not
+            let a since-injected consent-blocked attendee slip into what actually gets shared —
+            the human approved the ORIGINALLY governed content, so that's what must be sent"
+    (let [[s actor shared distributed] (fresh)
+          _  (run actor "d5" {:op :event/draft :activity "act-board" :event "ev-board"} 3)
+          r1 (run actor "s5" {:op :event/share :activity "act-board" :event "ev-board"} 3)]
+      (is (= :interrupted (:status r1)) "sharing always interrupts for human sign-off")
+      ;; Simulate a concurrent draft mutation landing on the SAME event while this share
+      ;; approval sits in the interrupt queue — swap in a blocked attendee.
+      (let [governed (store/draft-of s "ev-board")]
+        (store/record-datom! s {:kind :draft :id "ev-board"
+                                :value {:content (assoc (:content governed)
+                                                        :calendar/attendees ["att-alice" "att-blocked"])}}))
+      (is (= :blocked (:consent (store/contact s "att-blocked"))))
+      ;; Approve the ORIGINAL (pre-mutation) share request.
+      (let [r2 (g/run* actor {:approval {:status :approved :by "alice"}}
+                       {:thread-id "s5" :resume? true})]
+        (is (= :commit (get-in r2 [:state :disposition])) "approving a clean, already-governed share still commits")
+        (is (= 1 (count @distributed)) "share! ran exactly once")
+        (is (= ["att-alice" "att-bob"] (:attendees (get @shared "ev-board")))
+            "share! used the ORIGINALLY governed attendee list, unaffected by the later mutation")
+        (is (not (some #{"att-blocked"} (:attendees (get @shared "ev-board"))))
+            "the since-injected blocked attendee never appears in what was actually shared")
+        (is (not (some #{"att-blocked"} (mapcat :attendees @distributed)))
+            "the distributor never received the blocked attendee either")))))
+
 (deftest reject-signoff-holds
   (testing "a human rejection records a hold, not a share"
     (let [[s actor _shared distributed] (fresh)
