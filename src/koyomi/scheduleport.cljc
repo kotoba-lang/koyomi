@@ -8,7 +8,16 @@
   it to an injected Distributor fn for actual invite delivery (same
   injection shape as kekkai/tayori's ports). `mock-scheduleport` is the
   default — a deterministic in-memory target so the actor is runnable and
-  testable with no network/creds."
+  testable with no network/creds.
+
+  `slack-scheduleport` below is one such opt-in Distributor (Slack
+  `chat.postMessage`, alongside a separately-landing Resend-email one) —
+  still not a replacement for mock-scheduleport, just another
+  `distributor` a caller may inject into it. See README's 'Slack
+  Distributor (owner setup required)' section for what the human owner
+  still has to do (register a Slack app, obtain a bot token) before it is
+  usable; no live Slack call is made anywhere in this repo, including its
+  test suite."
   (:require [clojure.string :as str]))
 
 (defprotocol ScheduleTarget
@@ -102,3 +111,104 @@
          (distributor rec)
          (swap! shared assoc event-id rec)
          rec)))))
+
+;; ───────────────────────── Slack (opt-in, real chat.postMessage) ─────────────────────────
+;;
+;; Mirrors tayori.channel.slack's already-real Slack Web API request shape
+;; (`Authorization: Bearer <bot-token>`, JSON POST body) — koyomi only ever
+;; needs the write side (`chat.postMessage`), not tayori's read side
+;; (`conversations.history`) for reply-drafting. Untested against a live
+;; workspace (no bot token exists yet — see README); the request-building
+;; itself is covered by test/koyomi/scheduleport_test.clj with an injected
+;; fake :http-fn, never a real network call.
+
+#?(:clj
+(defn- slack-jvm-http-fn
+  "Real java.net.http POST — {:url :method :headers :body} -> {:status
+  :body}, the same convention as cloudflare.client/jvm-http-fn and the
+  :http-fn tayori.channel.slack expects (JVM-only default; a cljs/SCI/WASM
+  host must inject its own :http-fn)."
+  [{:keys [url method headers body]}]
+  (let [builder (reduce-kv (fn [^java.net.http.HttpRequest$Builder b k v] (.header b k v))
+                           (java.net.http.HttpRequest/newBuilder (java.net.URI/create url))
+                           headers)
+        request (-> (case (or method :post)
+                      :post (.POST builder (java.net.http.HttpRequest$BodyPublishers/ofString (or body "")))
+                      :get  (.GET builder))
+                    .build)
+        resp    (.send (java.net.http.HttpClient/newHttpClient) request
+                       (java.net.http.HttpResponse$BodyHandlers/ofString))]
+    {:status (.statusCode resp) :body (.body resp)})))
+
+(defn- json-string-escape [s]
+  (-> (str s)
+      (str/replace "\\" "\\\\")
+      (str/replace "\"" "\\\"")
+      (str/replace "\r\n" "\\n")
+      (str/replace "\n" "\\n")
+      (str/replace "\r" "\\n")
+      (str/replace "\t" "\\t")))
+
+(defn- default-json-write
+  "Minimal flat {k v} -> JSON object string encoder — sufficient for
+  chat.postMessage's {:channel :text} payload (both plain strings, no
+  nesting), so this file adds no JSON library dependency. A caller wanting
+  a richer payload (e.g. `blocks`) should inject a real :json-write (e.g.
+  `clojure.data.json/write-str`) instead."
+  [m]
+  (str "{" (str/join "," (map (fn [[k v]] (str "\"" (name k) "\":\"" (json-string-escape v) "\"")) m)) "}"))
+
+(defn- ics-summary-title
+  "Best-effort recovery of the human-readable event title from an already-
+  built ICS string's SUMMARY line, for a friendlier Slack notification text
+  only — `share!`'s distributor record carries `:ics`/`:attendees`, not the
+  original calendar.model content, so this is the only place a title is
+  available at all. Reverses `ics-escape-text`'s escaping (never used for
+  anything security-relevant — the governor already inspected the
+  structured :calendar/attendees, never this rendered text). Falls back to
+  nil — the caller uses the event id instead — if no SUMMARY line parses."
+  [ics]
+  (when-let [m (re-find #"(?m)^SUMMARY:(.*)$" (or ics ""))]
+    (-> (second m)
+        (str/replace "\\n" " ")
+        (str/replace "\\," ",")
+        (str/replace "\\;" ";")
+        (str/replace "\\\\" "\\"))))
+
+(defn slack-scheduleport
+  "A Slack `chat.postMessage` Distributor for `mock-scheduleport`'s
+  `distributor` slot — an opt-in alternative to the default no-op,
+  alongside (not replacing) a Resend-email Distributor landing separately.
+  Usage: `(mock-scheduleport (atom {}) (slack-scheduleport {:token \"xoxb-...\" :channel \"C0123...\"}))`.
+
+  `:token` (Slack bot token) and `:channel` (target channel id) are
+  owner-supplied constructor params — see README's 'Slack Distributor
+  (owner setup required)' section; NEVER hardcoded or env-guessed here.
+
+  Posts exactly one `chat.postMessage` per `share!` call: a short text
+  notification (the event's title, recovered from the ICS SUMMARY line,
+  + the attendee count) — never the ICS bytes themselves. The full .ics
+  invite is what actually needs to reach attendees' calendars, which is a
+  distinct concern from a Slack heads-up notification; wiring an .ics
+  upload into Slack would need `files.upload`, a separate, more complex
+  multipart endpoint, and is a deliberate follow-up (see README), not a
+  half-implemented guess here.
+
+  `:http-fn` / `:json-write` are injected for testability (default: a real
+  java.net.http POST / the minimal encoder above) — no live Slack call
+  happens anywhere in this repo's automated test suite (there is no bot
+  token to call with yet)."
+  [{:keys [token channel http-fn json-write]}]
+  (let [http-fn    (or http-fn
+                       #?(:clj slack-jvm-http-fn
+                          :cljs (fn [_] (throw (ex-info "slack-scheduleport: no :http-fn injected and no default HTTP transport on this host (JVM default is the built-in java.net.http POST; a cljs/SCI/WASM host must inject its own :http-fn)" {})))))
+        json-write (or json-write default-json-write)]
+    (fn [{:keys [event-id ics attendees]}]
+      (let [title (or (ics-summary-title ics) (str "event " event-id))
+            n     (count attendees)
+            text  (str "Event shared: \"" title "\" (" n (if (= 1 n) " attendee)" " attendees)"))]
+        (http-fn {:url "https://slack.com/api/chat.postMessage"
+                  :method :post
+                  :headers {"Authorization" (str "Bearer " token)
+                            "Content-Type" "application/json; charset=utf-8"}
+                  :body (json-write {:channel channel :text text})})))))

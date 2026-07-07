@@ -49,3 +49,85 @@
           lines (str/split ics #"\r\n")]
       (is (= "SUMMARY:Board meeting" (first (filter #(str/starts-with? % "SUMMARY:") lines))))
       (is (= 2 (count (filter #(str/starts-with? % "ATTENDEE:") lines)))))))
+
+;; ───────────────────────── slack-scheduleport — request-building only ─────────────────────────
+;;
+;; No live Slack call anywhere here (there is no bot token to call with
+;; yet; see README's 'Slack Distributor (owner setup required)' section).
+;; Every assertion below drives slack-scheduleport's returned distributor
+;; fn with an injected fake :http-fn that just captures the request map.
+
+(defn- capturing-http-fn [captured]
+  (fn [req]
+    (reset! captured req)
+    {:status 200 :body "{\"ok\":true}"}))
+
+(deftest slack-scheduleport-posts-chat-postMessage-with-bearer-auth
+  (testing "the right endpoint, method, bearer-token auth header, and channel"
+    (let [captured (atom nil)
+          distributor (scheduleport/slack-scheduleport
+                        {:token "xoxb-test-token" :channel "C0123456"
+                         :http-fn (capturing-http-fn captured)})
+          event {:calendar/id "ev-1" :calendar/title "Board meeting"
+                 :calendar/start "2026-07-10T09:00:00Z" :calendar/end "2026-07-10T10:00:00Z"
+                 :calendar/attendees ["att-alice" "att-bob"]}]
+      (distributor {:event-id "ev-1" :ics (scheduleport/ics-string event)
+                    :attendees (:calendar/attendees event)})
+      (let [req @captured]
+        (is (= "https://slack.com/api/chat.postMessage" (:url req)))
+        (is (= :post (:method req)))
+        (is (= "Bearer xoxb-test-token" (get-in req [:headers "Authorization"]))
+            "the real Slack Web API bearer-token auth header shape, matching
+             tayori.channel.slack's already-implemented convention")
+        (is (str/starts-with? (get-in req [:headers "Content-Type"]) "application/json"))
+        (is (str/includes? (:body req) "\"channel\":\"C0123456\"")
+            "posts to the constructor-injected channel, never a hardcoded one")
+        (is (str/includes? (:body req) "Board meeting")
+            "the title, recovered from the ICS SUMMARY line, appears in the notification text")
+        (is (str/includes? (:body req) "2 attendees"))))))
+
+(deftest slack-scheduleport-singular-attendee-count
+  (testing "exactly one attendee renders the singular form"
+    (let [captured (atom nil)
+          distributor (scheduleport/slack-scheduleport
+                        {:token "xoxb-test-token" :channel "C0123456"
+                         :http-fn (capturing-http-fn captured)})]
+      (distributor {:event-id "ev-2" :ics "BEGIN:VEVENT\r\nSUMMARY:Solo sync\r\nEND:VEVENT\r\n"
+                    :attendees ["att-alice"]})
+      (is (str/includes? (:body @captured) "1 attendee)")))))
+
+(deftest slack-scheduleport-falls-back-to-event-id-when-summary-missing
+  (testing "an ICS string with no parseable SUMMARY line still produces a well-formed notification"
+    (let [captured (atom nil)
+          distributor (scheduleport/slack-scheduleport
+                        {:token "xoxb-test-token" :channel "C0123456"
+                         :http-fn (capturing-http-fn captured)})]
+      (distributor {:event-id "ev-3" :ics "BEGIN:VEVENT\r\nEND:VEVENT\r\n" :attendees []})
+      (is (str/includes? (:body @captured) "ev-3")))))
+
+(deftest slack-scheduleport-accepts-injected-json-write
+  (testing "a caller-injected :json-write (e.g. for a richer payload) is honored instead of the built-in minimal encoder"
+    (let [captured (atom nil)
+          distributor (scheduleport/slack-scheduleport
+                        {:token "xoxb-test-token" :channel "C0123456"
+                         :http-fn (capturing-http-fn captured)
+                         :json-write pr-str})]
+      (distributor {:event-id "ev-4" :ics "BEGIN:VEVENT\r\nSUMMARY:Injected Encoder Event\r\nEND:VEVENT\r\n"
+                    :attendees ["att-alice"]})
+      (is (str/includes? (:body @captured) ":channel \"C0123456\"")
+          "pr-str's EDN-ish shape proves json-write really was swapped out"))))
+
+(deftest slack-scheduleport-does-not-mutate-mock-scheduleport-default-behavior
+  (testing "slack-scheduleport is just another distributor — mock-scheduleport still records shared events the same way with or without it"
+    (let [shared (atom {})
+          captured (atom nil)
+          st (scheduleport/mock-scheduleport
+               shared
+               (scheduleport/slack-scheduleport {:token "xoxb-t" :channel "C1"
+                                                 :http-fn (capturing-http-fn captured)}))
+          event {:calendar/id "ev-5" :calendar/title "Delivered Event"
+                 :calendar/start "2026-07-10T09:00:00Z" :calendar/end "2026-07-10T10:00:00Z"
+                 :calendar/attendees ["att-alice"]}]
+      (scheduleport/share! st "ev-5" event)
+      (is (= "ev-5" (:event-id (get @shared "ev-5"))))
+      (is (some? @captured) "the injected distributor was actually called"))))
