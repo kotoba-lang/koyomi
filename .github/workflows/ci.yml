@@ -5,8 +5,12 @@ name: ci
 # pinned :git/sha directly (public kotoba-lang repos). calendar.model is a
 # :local/root sibling checkout too (../calendar, always required, not just
 # :dev) — koyomi holds its EDN verbatim as :draft content and does not
-# reimplement it. Until this standalone repo's Actions are enabled, the gates
-# also run in the west superproject: `clojure -M:lint` and `clojure -M:dev:test`.
+# reimplement it. mailer (and mailer's own :local/root dependency on mail) are
+# :local/root siblings too (../mailer, ../mail) — koyomi.distribute's real
+# Resend ScheduleTarget builds its request via kotoba-lang/mailer rather than
+# reimplementing Resend request-building. Until this standalone repo's
+# Actions are enabled, the gates also run in the west superproject:
+# `clojure -M:lint` and `clojure -M:dev:test`.
 
 on:
   push:
@@ -34,6 +38,10 @@ jobs:
         with: { repository: kotoba-lang/langchain, path: orgs/kotoba-lang/langchain }
       - uses: actions/checkout@v4
         with: { repository: kotoba-lang/calendar, path: orgs/kotoba-lang/calendar }
+      - uses: actions/checkout@v4
+        with: { repository: kotoba-lang/mailer, path: orgs/kotoba-lang/mailer }
+      - uses: actions/checkout@v4
+        with: { repository: kotoba-lang/mail, path: orgs/kotoba-lang/mail }
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: "21" }
       - uses: DeLaGuardo/setup-clojure@13.0

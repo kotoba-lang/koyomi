@@ -87,21 +87,37 @@ drafting entirely → prints the schedule-sharing audit ledger → swaps to
 | `src/koyomi/scheduleport.cljc` | **ScheduleTarget** port (`fetch-event`/`propose-revision!`/`share!`) + koyomi-owned RFC 5545 ICS builder + `mock-scheduleport` |
 | `src/koyomi/cacao.clj` | agent-side **CACAO self-mint** (JVM Ed25519 + did:key + CBOR; per-actor key) |
 | `src/koyomi/kotoba.clj` | wire `DatomicStore` to a kotoba-server pod (kotobase.net XRPC) |
+| `src/koyomi/distribute.clj` | **REAL Resend Distributor** — `resend-scheduleport`, an opt-in `ScheduleTarget` that actually emails the ICS via `kotoba-lang/mailer` (JVM `java.net.http`, live-verified — see below) |
 | `src/koyomi/query.cljc` | pure status lookups (`draft-status`/`shared?`) for callers that don't want to run the actor |
 | `src/koyomi/cli.clj` | minimal JVM entrypoint for a status read against an EDN-seeded MemStore |
 | `src/koyomi/sim.cljc` | demo driver |
-| `test/koyomi/*_test.clj` | propose-only contract · store parity (Mem≡Datomic) · CACAO |
+| `test/koyomi/*_test.clj` | propose-only contract · store parity (Mem≡Datomic) · CACAO · Resend/Slack request-building (stubbed transport) |
 
 ## ScheduleTarget → real backend (injection)
 
 `calendar.model` has zero ICS-export or sharing concept (verified — grepping
 `ics|ical|share|publish` across it is a zero hit), so `koyomi.scheduleport`
-owns building the RFC 5545 string itself; a real `share!` implementation
-would still call an injected **Distributor** fn (email/calendar-invite API)
-for actual delivery, same injection shape as `tayori.channel`/`tayori.docport`.
-`mock-scheduleport` is the runnable, deterministic default — it records what
-WOULD have gone out (`{:event-id :ics :attendees}`) into an atom and hands
-that same map to the injected distributor (a no-op by default).
+owns building the RFC 5545 string itself; `share!` hands that ICS to an
+injected **Distributor** for actual delivery, same injection shape as
+`tayori.channel`/`tayori.docport`. `mock-scheduleport` is the runnable,
+deterministic DEFAULT — it records what WOULD have gone out
+(`{:event-id :ics :attendees}`) into an atom and hands that same map to an
+injected `distributor` fn (a no-op by default; this is the slot
+`slack-scheduleport` below plugs into for a channel notification).
+
+`koyomi.distribute/resend-scheduleport` is the opt-in REAL `ScheduleTarget` —
+not a `distributor` fn plugged into `mock-scheduleport`, but a full drop-in
+replacement swapped in via `koyomi.operation/build`'s `:scheduleport` opt.
+It builds the Resend request via `kotoba-lang/mailer` (`mailer.core/request`,
+same layering `cloud-itonami.mail` rides on), attaches the already-built ICS
+as a `text/calendar` `invite.ics` attachment, POSTs it with a real
+`java.net.http` client, and records the returned Resend message id onto the
+given `koyomi.store/Store`'s append-only ledger (`:tool (str "resend:" id)`,
+the koyomi analog of `cloud_itonami.mail`'s `:itonami.effect/tool` pattern).
+`:calendar/attendees` entries are used directly as recipient email addresses
+(the same assumption `ics-string`'s `ATTENDEE:mailto:` lines already make) —
+`koyomi.store/demo-data`'s placeholder ids (`"att-alice"` etc.) are NOT real
+addresses and a real share against them fails closed (invalid recipient).
 
 ```clojure
 ;; actor issues its own key, self-mints CACAO (same pattern as kekkai/tayori)
@@ -112,12 +128,12 @@ that same map to the injected distributor (a no-op by default).
                             :json-read #(json/read-str % :key-fn keyword)
                             :identity me}))
 
-;; a real schedule-LLM + a real ScheduleTarget (an actual Distributor injected)
+;; a real schedule-LLM + the real Resend ScheduleTarget
 (require '[langchain.model :as model] '[koyomi.operation :as op]
-         '[koyomi.coordllm :as c] '[koyomi.scheduleport :as sp])
+         '[koyomi.coordllm :as c] '[koyomi.distribute :as distribute])
 (op/build store
   {:advisor (c/llm-advisor (model/anthropic-model {:api-key … :http-fn … :json-write … :json-read …}))
-   :scheduleport (sp/mock-scheduleport (atom {}) my-real-invite-sending-fn)})
+   :scheduleport (distribute/resend-scheduleport store "ops@mail.itonami.cloud")})
 ```
 
 An unparseable/hallucinating LLM response falls to confidence 0 / noop, and
@@ -127,10 +143,14 @@ LLM response to an actual share).
 ## Slack Distributor (owner setup required)
 
 `koyomi.scheduleport/slack-scheduleport` is a real Slack `chat.postMessage`
-Distributor — an opt-in `distributor` for `mock-scheduleport`, alongside
-(not replacing) the default no-op and a Resend-email Distributor. It
-posts a short text notification (event title, recovered from the ICS
-SUMMARY line, + attendee count) to a channel; it does **not** attach the
+Distributor — an opt-in `distributor` for `mock-scheduleport`'s
+`distributor` slot, alongside (not replacing) the default no-op. It is a
+channel *notification* only, a distinct concern from `koyomi.distribute/
+resend-scheduleport` above (a full `ScheduleTarget` that actually delivers
+the ICS invite) — the two can be used together (Resend for the real invite,
+Slack for a heads-up) or independently. It posts a short text notification
+(event title, recovered from the ICS SUMMARY line, + attendee count) to a
+channel; it does **not** attach the
 .ics invite itself — that would need Slack's separate `files.upload`
 multipart endpoint, out of scope here (a real, if plain, notification
 beats a half-implemented file upload — and attendees still need the
@@ -181,11 +201,11 @@ as a separate follow-up, out of scope here.
 
 Scaffold + runnable. Store is `:db-api` driven — `MemStore ≡
 DatomicStore(langchain.db) ≡ kotoba-store(kotobase.net)` on the same
-contract. CACAO self-issuance is offline-verified. `koyomi.scheduleport`'s
-real Distributor binding (an actual email/calendar-invite API) is
-structurally complete but **live-untested** — same known state kekkai/tayori
-ship in; `koyomi.scheduleport/slack-scheduleport` is a real,
+contract. CACAO self-issuance is offline-verified. `koyomi.distribute/
+resend-scheduleport` (the real email `ScheduleTarget`) is **live-verified** —
+a real invite send against Resend returned a real message id and the ledger
+fact recording it; `koyomi.scheduleport/slack-scheduleport` is a real,
 request-shape-tested (never live-called) opt-in Distributor scaffold — see
 'Slack Distributor (owner setup required)' above for what's still needed
-before it's usable. `mock-scheduleport` is the runnable, deterministic
+before it's usable. `mock-scheduleport` remains the runnable, deterministic
 default.
