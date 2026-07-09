@@ -2,7 +2,8 @@
   "Store contract against both backends — proving MemStore ≡ DatomicStore makes
   'swap the SSoT for Datomic / kotoba-server' a config change, not a rewrite."
   (:require [clojure.test :refer [deftest is testing]]
-            [koyomi.store :as store]))
+            [koyomi.store :as store]
+            [langchain.db :as db]))
 
 (defn- backends [] [["MemStore" (store/seed-db)] ["DatomicStore" (store/datomic-seed-db)]])
 
@@ -43,3 +44,18 @@
                                     :calendar/start "2026-01-01T00:00:00Z" :calendar/end "2026-01-01T01:00:00Z"
                                     :calendar/attendees [] :calendar/links [] :tenant "t"}})
     (is (= "t" (:calendar/title (store/event s "x"))))))
+
+(deftest datomic-ledger-append-does-not-lose-a-fact-when-two-writers-race
+  (testing "two append-ledger! callers who both read the same `(count (ledger s))`
+            before either transacts (the exact non-atomic read-modify-write
+            shape append-ledger! itself uses) must NOT collide into one
+            writer's fact silently overwriting the other's -- verified
+            against real langchain.db transact! semantics, not a stub"
+    (let [s (store/datomic-store)
+          n1 (count (store/ledger s))
+          n2 (count (store/ledger s))]
+      (is (= 0 n1 n2) "sanity: both writers observe the same pre-race count")
+      ((:transact! db/api) (:conn s) [{:ledger/fact (pr-str {:op :writer-A :disposition :commit})}])
+      ((:transact! db/api) (:conn s) [{:ledger/fact (pr-str {:op :writer-B :disposition :commit})}])
+      (is (= 2 (count (store/ledger s))) "both facts survive -- neither writer's append is lost")
+      (is (= #{:writer-A :writer-B} (set (map :op (store/ledger s))))))))
