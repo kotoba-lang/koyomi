@@ -131,8 +131,7 @@
   {:activity/id {:db/unique :db.unique/identity}
    :contact/id  {:db/unique :db.unique/identity}
    :event/id    {:db/unique :db.unique/identity}
-   :draft/id    {:db/unique :db.unique/identity}
-   :ledger/seq  {:db/unique :db.unique/identity}})
+   :draft/id    {:db/unique :db.unique/identity}})
 
 (defn- enc [v] (pr-str v))
 (defn- dec* [s] (when s (edn/read-string s)))
@@ -161,7 +160,16 @@
   (draft-of [this event-id]
     (-> (pull* this [:draft/edn] [:draft/id event-id]) :draft/edn dec*))
   (ledger [this]
-    (->> (q* this '[:find ?s ?f :where [?e :ledger/seq ?s] [?e :ledger/fact ?f]])
+    ;; ordered by entity id (?e), never a client-precomputed :ledger/seq -- a
+    ;; caller-side `(count (ledger s))` read followed by a separate `tx*` write
+    ;; is a non-atomic read-modify-write; two concurrent append-ledger! calls
+    ;; can compute the SAME seq, and since :ledger/seq was a :db.unique/identity
+    ;; attr, the second transact! silently upserted onto (retracted +
+    ;; replaced) the first call's entity -- verified data loss against the
+    ;; real langchain.db transact! semantics. :db/id is allocated fresh per
+    ;; entity map with no unique attr to collide on, so ordering by it can
+    ;; never lose a fact this way.
+    (->> (q* this '[:find ?e ?f :where [?e :ledger/fact ?f]])
          (sort-by first) (mapv (comp dec* second))))
   (record-datom! [s {:keys [kind id value]}]
     (case kind
@@ -172,7 +180,7 @@
       nil)
     s)
   (append-ledger! [s fact]
-    (tx* s [{:ledger/seq (count (ledger s)) :ledger/fact (enc fact)}]) fact)
+    (tx* s [{:ledger/fact (enc fact)}]) fact)
   (seed! [s data]
     (doseq [[id a] (:activities data)] (record-datom! s {:kind :activity :id id :value a}))
     (doseq [[id c] (:contacts data)]   (record-datom! s {:kind :contact :id id :value c}))
