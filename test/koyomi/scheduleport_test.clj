@@ -6,6 +6,7 @@
   vector, never rendered ICS text."
   (:require [clojure.test :refer [deftest is testing]]
             [clojure.string :as str]
+            [clojure.data.json :as json]
             [koyomi.scheduleport :as scheduleport]))
 
 (deftest adversarial-title-cannot-inject-a-forged-attendee-line
@@ -131,3 +132,38 @@
       (scheduleport/share! st "ev-5" event)
       (is (= "ev-5" (:event-id (get @shared "ev-5"))))
       (is (some? @captured) "the injected distributor was actually called"))))
+
+(deftest slack-scheduleport-escapes-c0-control-chars-in-json-body
+  (testing "a title containing raw C0 control chars still produces a valid JSON body --
+            RFC 8259 requires escaping ALL of U+0000-U+001F, not just \\n/\\t"
+    (let [captured (atom nil)
+          distributor (scheduleport/slack-scheduleport
+                        {:token "xoxb-test-token" :channel "C0123456"
+                         :http-fn (capturing-http-fn captured)})
+          title (str "Report " (char 7) " ready " (char 31) " now")]
+      (distributor {:event-id "ev-6" :ics (str "BEGIN:VEVENT\r\nSUMMARY:" title "\r\nEND:VEVENT\r\n")
+                    :attendees []})
+      (let [body (:body @captured)
+            decoded (json/read-str body)]
+        (is (not (str/includes? body (str (char 7))))
+            "the raw bell character must not appear unescaped in the JSON body")
+        (is (str/includes? body "\\u0007"))
+        (is (str/includes? body "\\u001f"))
+        (is (str/includes? (get decoded "text") title)
+            "a real JSON parser round-trips the escaped control chars back to the originals")))))
+
+(deftest slack-scheduleport-json-body-round-trips-through-a-real-json-parser
+  (testing "the whole body is well-formed JSON regardless of tabs, backslashes, quotes, or
+            other control chars in the title (kept single-line: the SUMMARY line recovery
+            regex only ever sees a real ics-escape-text'd -- so raw CR/LF-free -- title)"
+    (let [captured (atom nil)
+          distributor (scheduleport/slack-scheduleport
+                        {:token "xoxb-test-token" :channel "C0123456"
+                         :http-fn (capturing-http-fn captured)})
+          title (str "Line1" (char 9) "tabbed" (char 92) "backslash" (char 34) "quote" (char 1) "soh")]
+      (distributor {:event-id "ev-7" :ics (str "BEGIN:VEVENT\r\nSUMMARY:" title "\r\nEND:VEVENT\r\n")
+                    :attendees []})
+      (let [decoded (json/read-str (:body @captured))]
+        (is (= "C0123456" (get decoded "channel")))
+        (is (str/includes? (get decoded "text") "tabbed\\backslash\"quote")
+            "read-str itself un-escaping back to the raw chars is the proof the body was valid JSON")))))
