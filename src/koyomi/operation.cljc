@@ -41,11 +41,15 @@
   "The store record a clean/approved assess op commits. :event/draft stores
   the proposal itself (via koyomi.model/draft, the canonical draft shape);
   :event/share flips the already-stored draft's :status AND carries forward
-  the proposal's :content — the same content the governor already vetted at
-  govern-time for THIS request — so commit-effects! can share that exact,
-  already-checkpointed content instead of re-reading (and potentially
-  re-trusting a since-mutated) store draft at commit time (TOCTOU fix)."
-  [request proposal event-id]
+  `verdict`'s `:checked-content` — the exact value koyomi.governor/check
+  validated at govern-time for THIS request (the store's `draft-of`, per
+  `content-of`) — so commit-effects! can share that exact, already-
+  checkpointed content instead of re-reading (and potentially re-trusting a
+  since-mutated) store draft at commit time (TOCTOU fix). It must NOT carry
+  forward `proposal`'s :content: `content-of` deliberately distrusts the
+  proposal for :event/share, so using `proposal` here would share whatever a
+  forged/buggy schedule-LLM claims instead of what was actually governed."
+  [request proposal verdict event-id]
   (case (:op request)
     :event/draft
     {:kind :draft :id event-id
@@ -54,7 +58,7 @@
                            :cites      (:cites proposal)
                            :redactions (:redactions proposal)})}
     :event/share
-    {:kind :draft :id event-id :value {:status :shared :content (:content proposal)}}))
+    {:kind :draft :id event-id :value {:status :shared :content (:checked-content verdict)}}))
 
 (defn- commit-effects!
   "Perform the op-specific EXTERNAL effect BEFORE anything is written to the
@@ -69,10 +73,11 @@
   the store doesn't have it yet at this point anyway.
 
   `:event/share` shares `record`'s `:value :content`, which pending-record
-  carried forward verbatim from the `proposal` channel — the exact content
-  koyomi.governor/check already vetted for THIS approval request back at
-  govern-time (before :request-approval's human-in-the-loop interrupt). A
-  fresh `(store/draft-of store event)` re-read here would be a TOCTOU: the
+  carried forward from the governed `verdict`'s `:checked-content` — the
+  exact content koyomi.governor/check already vetted for THIS approval
+  request back at govern-time (before :request-approval's human-in-the-loop
+  interrupt), never the untrusted `proposal` channel. A fresh
+  `(store/draft-of store event)` re-read here would be a TOCTOU: the
   human approved what they reviewed at govern-time, but if the stored draft
   was mutated while the approval sat in the interrupt (e.g. a legitimate
   concurrent :event/draft revision landing on the same event), a re-read
@@ -156,14 +161,14 @@
                         :recommendation (:recommendation proposal)
                         :phase ph :confidence (:confidence verdict)}]}
               :commit
-              {:disposition :commit :record (pending-record request proposal subj)}))))
+              {:disposition :commit :record (pending-record request proposal verdict subj)}))))
 
       (g/add-node :request-approval
-        (fn [{:keys [request proposal approval]}]
+        (fn [{:keys [request proposal approval verdict]}]
           (let [subj (subject request)]
             (if (= :approved (:status approval))
               {:disposition :commit
-               :record (update (pending-record request proposal subj)
+               :record (update (pending-record request proposal verdict subj)
                                :value assoc :approved-by (:by approval))
                :audit [{:t :human-signoff :op (:op request) :subject subj
                         :by (:by approval) :recommendation (:recommendation proposal)}]}
