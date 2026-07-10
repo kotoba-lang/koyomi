@@ -133,11 +133,19 @@
 
 (defn check
   "Censors a schedule-LLM proposal for a koyomi op. Returns
-   {:ok? :violations :confidence :hard? :escalate? :high-stakes? :double-booking}.
+   {:ok? :violations :confidence :hard? :escalate? :high-stakes? :double-booking
+    :checked-content}.
 
    Hard violations force HOLD and cannot be overridden. Sharing an event is
    high-stakes → human sign-off even when clean; so is any event with a
-   first-contact? attendee."
+   first-contact? attendee.
+
+   `:checked-content` is the exact value this check validated (`content-of`
+   above) -- for `:event/share` that's the store's `draft-of`, fetched fresh
+   here, NOT `proposal`. The caller MUST deliver this value, not `proposal`:
+   `content-of` deliberately distrusts the proposal for `:event/share` (see
+   above), so building the delivered record from `proposal` instead of
+   `:checked-content` would validate one map and deliver a different one."
   [request proposal st]
   (let [op      (:op request)
         content (content-of request proposal st)
@@ -157,13 +165,14 @@
         dbl     (when content (double-booking-conflicts st (:event request) content))
         stakes? (or (= :event/share op) (boolean (seq (high-stakes-attendees st content))))
         hard?   (boolean (seq hard))]
-    {:ok?            (and (not hard?) (not low?) (not stakes?) (empty? dbl))
-     :violations     hard
-     :confidence     conf
-     :hard?          hard?
-     :escalate?      (and (not hard?) (or low? stakes? (seq dbl)))
-     :high-stakes?   stakes?
-     :double-booking dbl}))
+    {:ok?             (and (not hard?) (not low?) (not stakes?) (empty? dbl))
+     :violations      hard
+     :confidence      conf
+     :hard?           hard?
+     :escalate?       (and (not hard?) (or low? stakes? (seq dbl)))
+     :high-stakes?    stakes?
+     :double-booking  dbl
+     :checked-content content}))
 
 (defn hold-fact [request verdict]
   {:t :koyomi-hold :op (:op request) :subject (:event request)

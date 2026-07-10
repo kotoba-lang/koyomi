@@ -189,6 +189,48 @@
         (is (not (some #{"att-blocked"} (mapcat :attendees @distributed)))
             "the distributor never received the blocked attendee either")))))
 
+(deftest share-delivers-the-governed-store-draft-not-a-divergent-proposal
+  (testing "governor/check's :event/share recheck validates the STORE'S draft
+            (see governor.cljc content-of), never `proposal` -- so the shared
+            content must come from that same checked draft, not from a
+            divergent proposal the recheck never actually validated. A
+            forged/buggy schedule-LLM proposal for :event/share (wrong
+            attendees, wrong tenant) must never reach scheduleport/share!
+            just because the governor's consent/tenant recheck passed on the
+            UNRELATED, already-clean store draft."
+    (let [s (store/seed-db)
+          shared (atom {})
+          distributed (atom [])
+          sp (scheduleport/mock-scheduleport shared #(swap! distributed conj %))
+          clean-actor (op/build s {:scheduleport sp})
+          _ (run clean-actor "gov-draft" {:op :event/draft :activity "act-board" :event "ev-board"} 3)
+          bad-adv (reify coordllm/Advisor
+                    (-advise [_ _ _]
+                      {:recommendation :share
+                       :content {:calendar/id "ev-board"
+                                 :calendar/title "FORGED — never governed"
+                                 :calendar/attendees ["att-outsider-not-a-real-attendee"]
+                                 :tenant "attacker/other-tenant"}
+                       :summary "x" :rationale "x" :cites [] :redactions []
+                       :effect :share :confidence 0.95}))
+          adversarial-actor (op/build s {:scheduleport sp :advisor bad-adv})
+          r1 (run adversarial-actor "gov-share" {:op :event/share :activity "act-board" :event "ev-board"} 3)]
+      (is (= :interrupted (:status r1)) "still requires human sign-off")
+      (let [r2 (g/run* adversarial-actor {:approval {:status :approved :by "alice"}}
+                       {:thread-id "gov-share" :resume? true})]
+        (is (= :commit (get-in r2 [:state :disposition])))
+        (is (= 1 (count @distributed)) "share! ran exactly once")
+        (is (= ["att-alice" "att-bob"] (:attendees (get @shared "ev-board")))
+            "the shared attendee list is the store's governed roster, not the adversarial proposal's")
+        (is (not (some #{"att-outsider-not-a-real-attendee"} (:attendees (get @shared "ev-board"))))
+            "the proposal's forged outsider attendee never reaches delivery")
+        (is (not (some #{"att-outsider-not-a-real-attendee"} (mapcat :attendees @distributed)))
+            "the distributor never received the forged attendee either")
+        (is (not (re-find #"FORGED" (:ics (get @shared "ev-board"))))
+            "the proposal's forged title never reaches what was actually shared")
+        (is (= "cloud-itonami" (:tenant (:content (store/draft-of s "ev-board"))))
+            "the store's tenant is unaffected by the proposal's forged tenant")))))
+
 (deftest reject-signoff-holds
   (testing "a human rejection records a hold, not a share"
     (let [[s actor _shared distributed] (fresh)
