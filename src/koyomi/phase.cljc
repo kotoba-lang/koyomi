@@ -25,7 +25,25 @@
    2 {:label "assisted-draft" :assess assess-ops :auto #{:event/draft}}
    3 {:label "supervised"     :assess assess-ops :auto #{:event/draft}}})
 
-(def default-phase 3)
+(def default-phase
+  "The phase used when `context` carries no :phase at all
+  (koyomi.operation: (:phase context phase/default-phase)), AND the
+  fallback `gate` itself uses for an unrecognized phase NUMBER
+  (`(get phases phase (get phases default-phase))`). This is directly
+  reachable by any ordinary caller that simply omits :phase -- not just
+  malformed/malicious input -- so it must be the MOST CONSERVATIVE
+  phase, never the most permissive. This was 3 (supervised, where
+  :event/draft can auto-commit) until a live check confirmed a caller
+  who forgets :phase silently got maximum autonomy instead of the safe
+  default -- the same accidental-fail-open shape already found and
+  fixed this session in the shared talent.phase template
+  (gftd-talent-actor) and its siblings newscaster.phase, wami.phase,
+  kyoninka.phase, sng.phase, itonami.phase, tayori.phase,
+  goyoukiki.phase, denrei.phase, shoko.phase, and teian.phase, which
+  all inherited the same bug. 1 (assisted) matches those fixes.
+  :event/share remains unaffected either way (never in any phase's
+  :auto set -- sharing always requires a human)."
+  1)
 
 (defn record-op? [op] (contains? record-ops op))
 
