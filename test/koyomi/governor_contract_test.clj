@@ -40,6 +40,21 @@
       (is (= "cloud-itonami" (:tenant (:content (store/draft-of s "ev-board")))))
       (is (= ["att-alice" "att-bob"] (:calendar/attendees (:content (store/draft-of s "ev-board"))))))))
 
+(deftest missing-phase-context-does-not-grant-max-autonomy
+  ;; default-phase is the fallback both when :phase is entirely absent
+  ;; from context (koyomi.operation) and when an unrecognized phase
+  ;; number is passed (phase/gate). It used to be 3 -- where
+  ;; :event/draft can auto-commit -- so a caller that simply forgot to
+  ;; set :phase silently got MAXIMUM autonomy instead of the safe
+  ;; "start narrow" default.
+  (testing "omitting :phase from context still requires human approval on a clean draft"
+    (let [[s actor] (fresh)
+          res (g/run* actor {:request {:op :event/draft :activity "act-board" :event "ev-board"} :context {}}
+                      {:thread-id "mp"})]
+      (is (not= :commit (get-in res [:state :disposition]))
+          "a clean draft must not auto-commit when :phase is unset")
+      (is (nil? (store/draft-of s "ev-board")) "SSoT untouched without explicit phase"))))
+
 (deftest no-actuation-invariant
   (testing "a draft proposal that claims it already shared is held"
     (let [[s _] (fresh)
