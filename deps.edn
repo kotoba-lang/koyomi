@@ -15,13 +15,15 @@
         ;; the calendar.model event EDN koyomi holds verbatim as :draft
         ;; content — koyomi does NOT reimplement it (ADR-2607062010).
         io.github.kotoba-lang/calendar
-        {:local/root "../calendar"}
+        {:git/url "https://github.com/kotoba-lang/calendar.git"
+                                     :git/sha "01163ded2616a604c24807f2c1e867b0db53510c"}
         ;; koyomi.distribute's REAL Resend ScheduleTarget builds its request
         ;; via kotoba-lang/mailer (which itself depends on kotoba-lang/mail
         ;; for mail.message/mail.draft/mail.receipt) rather than reimplementing
         ;; Resend request-building — same layering cloud-itonami.mail rides on.
         io.github.kotoba-lang/mailer
-        {:local/root "../mailer"}
+        {:git/url "https://github.com/kotoba-lang/mailer.git"
+                                     :git/sha "64a5e4e6f7307c582f3d0d74eca4f6cadade9a5b"}
         ;; koyomi.distribute owns the network call + JSON envelope itself
         ;; (mirrors cloud_itonami.mail's charter: "only this namespace touches
         ;; the network ... mail.*/mailer.* stay pure") — same lightweight
