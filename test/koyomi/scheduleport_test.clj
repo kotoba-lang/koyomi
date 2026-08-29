@@ -6,7 +6,7 @@
   vector, never rendered ICS text."
   (:require [clojure.test :refer [deftest is testing]]
             [clojure.string :as str]
-            [clojure.data.json :as json]
+            [json.data-json :as json]
             [koyomi.scheduleport :as scheduleport]))
 
 (deftest adversarial-title-cannot-inject-a-forged-attendee-line

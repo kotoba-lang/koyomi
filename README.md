@@ -121,7 +121,7 @@ addresses and a real share against them fails closed (invalid recipient).
 
 ```clojure
 ;; actor issues its own key, self-mints CACAO (same pattern as kekkai/tayori)
-(require '[koyomi.kotoba :as k] '[koyomi.cacao :as cacao] '[clojure.data.json :as json])
+(require '[koyomi.kotoba :as k] '[koyomi.cacao :as cacao] '[json.data-json :as json])
 (def me    (cacao/load-or-create-identity! ".koyomi/identity.edn"))
 (def store (k/kotoba-store {:url "https://kotobase.net"
                             :json-write json/write-str

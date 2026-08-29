@@ -182,7 +182,7 @@
   chat.postMessage's {:channel :text} payload (both plain strings, no
   nesting), so this file adds no JSON library dependency. A caller wanting
   a richer payload (e.g. `blocks`) should inject a real :json-write (e.g.
-  `clojure.data.json/write-str`) instead."
+  `json.data-json/write-str`) instead."
   [m]
   (str "{" (str/join "," (map (fn [[k v]] (str "\"" (name k) "\":\"" (json-string-escape v) "\"")) m)) "}"))
 

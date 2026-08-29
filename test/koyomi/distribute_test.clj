@@ -4,7 +4,7 @@
   fully runnable offline. The one real send against Resend is a separate,
   manual live-verification step, never part of this automated suite."
   (:require [clojure.test :refer [deftest is testing]]
-            [clojure.data.json :as json]
+            [json.data-json :as json]
             [koyomi.distribute :as distribute]
             [koyomi.scheduleport :as scheduleport]
             [koyomi.store :as store]))
