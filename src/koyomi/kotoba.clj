@@ -6,7 +6,7 @@
 
   I/O is injected (langchain's host-caps contract): an http-fn is provided here
   via JDK java.net.http (no dependency), and the JSON pair is passed by the
-  caller (e.g. clojure.data.json) so this namespace stays dependency-free.
+  caller (e.g. json.data-json) so this namespace stays dependency-free.
 
   The kotobase.net datomic endpoints are auth-gated — pass :token (Bearer JWT)
   or :cacao + :did. A live run therefore needs a credential; the store contract

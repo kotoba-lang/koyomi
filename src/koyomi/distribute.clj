@@ -44,7 +44,7 @@
   against them, by design (a real deployment must populate
   `:calendar/attendees` with real email addresses for both the ICS ATTENDEE
   lines and this real send path to be meaningful)."
-  (:require [clojure.data.json :as json]
+  (:require [json.data-json :as json]
             [koyomi.scheduleport :as scheduleport]
             [koyomi.store :as store]
             [mail.message :as message]
