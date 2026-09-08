@@ -5,7 +5,7 @@
   consent-violations only inspects the structured :calendar/attendees
   vector, never rendered ICS text."
   (:require [clojure.test :refer [deftest is testing]]
-            [clojure.string :as str]
+            [kotoba.lang.text :as str]
             [json.data-json :as json]
             [koyomi.scheduleport :as scheduleport]))
 

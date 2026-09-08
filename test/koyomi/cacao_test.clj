@@ -6,7 +6,7 @@
   well-formed CBOR envelope. The per-actor key model is the koyomi/tayori/
   kekkai analog — the key IS the identity."
   (:require [clojure.test :refer [deftest is testing]]
-            [clojure.string :as str]
+            [kotoba.lang.text :as str]
             [koyomi.cacao :as c])
   (:import [java.util Base64]
            [java.security Signature]))
