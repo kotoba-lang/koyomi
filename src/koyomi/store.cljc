@@ -30,7 +30,7 @@
   surveillance, same charter as kekkai's/tayori's ledgers)."
   (:require #?(:clj  [clojure.edn :as edn]
                :cljs [cljs.reader :as edn])
-            [clojure.string :as str]
+            [kotoba.lang.text :as str]
             [calendar.model :as cal]
             [koyomi.model :as model]
             [langchain.db :as d]))
