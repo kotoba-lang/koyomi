@@ -78,19 +78,19 @@ drafting entirely → prints the schedule-sharing audit ledger → swaps to
 
 | File | Role |
 |---|---|
-| `src/koyomi/model.cljc` | unified `draft`/`contact` shapes (the koyomi analog of tayori's contact model, applied to calendar attendees) |
-| `src/koyomi/store.cljc` | **Store** protocol — `MemStore` ‖ `DatomicStore` (`langchain.db`, swappable to Datomic Local / kotoba-server) + append-only **schedule-sharing audit ledger** |
-| `src/koyomi/coordllm.cljc` | **schedule-LLM Advisor** — `mock-advisor` ‖ `llm-advisor` (`langchain.model`); draft/share proposals |
-| `src/koyomi/governor.cljc` | **ComplianceGovernor** — no-actuation · consent-required · tenant-isolation · double-booking (soft) · high-stakes |
-| `src/koyomi/phase.cljc` | **Phase 0→3** — ingest-only → assisted → assisted-draft → supervised (sharing always human) |
-| `src/koyomi/operation.cljc` | **ScheduleActor** — langgraph StateGraph; ingest vs assess flows |
-| `src/koyomi/scheduleport.cljc` | **ScheduleTarget** port (`fetch-event`/`propose-revision!`/`share!`) + koyomi-owned RFC 5545 ICS builder + `mock-scheduleport` |
-| `src/koyomi/cacao.clj` | agent-side **CACAO self-mint** (JVM Ed25519 + did:key + CBOR; per-actor key) |
-| `src/koyomi/kotoba.clj` | wire `DatomicStore` to a kotoba-server pod (kotobase.net XRPC) |
-| `src/koyomi/distribute.clj` | **REAL Resend Distributor** — `resend-scheduleport`, an opt-in `ScheduleTarget` that actually emails the ICS via `kotoba-lang/mailer` (JVM `java.net.http`, live-verified — see below) |
-| `src/koyomi/query.cljc` | pure status lookups (`draft-status`/`shared?`) for callers that don't want to run the actor |
-| `src/koyomi/cli.clj` | minimal JVM entrypoint for a status read against an EDN-seeded MemStore |
-| `src/koyomi/sim.cljc` | demo driver |
+| `src/koyomi/model.cljk` | unified `draft`/`contact` shapes (the koyomi analog of tayori's contact model, applied to calendar attendees) |
+| `src/koyomi/store.cljk` | **Store** protocol — `MemStore` ‖ `DatomicStore` (`langchain.db`, swappable to Datomic Local / kotoba-server) + append-only **schedule-sharing audit ledger** |
+| `src/koyomi/coordllm.cljk` | **schedule-LLM Advisor** — `mock-advisor` ‖ `llm-advisor` (`langchain.model`); draft/share proposals |
+| `src/koyomi/governor.cljk` | **ComplianceGovernor** — no-actuation · consent-required · tenant-isolation · double-booking (soft) · high-stakes |
+| `src/koyomi/phase.cljk` | **Phase 0→3** — ingest-only → assisted → assisted-draft → supervised (sharing always human) |
+| `src/koyomi/operation.cljk` | **ScheduleActor** — langgraph StateGraph; ingest vs assess flows |
+| `src/koyomi/scheduleport.cljk` | **ScheduleTarget** port (`fetch-event`/`propose-revision!`/`share!`) + koyomi-owned RFC 5545 ICS builder + `mock-scheduleport` |
+| `src/koyomi/cacao.cljk` | agent-side **CACAO self-mint** (JVM Ed25519 + did:key + CBOR; per-actor key) |
+| `src/koyomi/kotoba.cljk` | wire `DatomicStore` to a kotoba-server pod (kotobase.net XRPC) |
+| `src/koyomi/distribute.cljk` | **REAL Resend Distributor** — `resend-scheduleport`, an opt-in `ScheduleTarget` that actually emails the ICS via `kotoba-lang/mailer` (JVM `java.net.http`, live-verified — see below) |
+| `src/koyomi/query.cljk` | pure status lookups (`draft-status`/`shared?`) for callers that don't want to run the actor |
+| `src/koyomi/cli.cljk` | minimal JVM entrypoint for a status read against an EDN-seeded MemStore |
+| `src/koyomi/sim.cljk` | demo driver |
 | `test/koyomi/*_test.clj` | propose-only contract · store parity (Mem≡Datomic) · CACAO · Resend/Slack request-building (stubbed transport) |
 
 ## ScheduleTarget → real backend (injection)
