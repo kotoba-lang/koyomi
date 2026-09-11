@@ -60,9 +60,9 @@ events can be entirely legitimate, but a human should still take a look.
 ## Run
 
 ```bash
-clojure -M:dev:run     # drive: draft → share through the actor
-clojure -M:dev:test    # the propose-only contract + store parity + CACAO crypto
-clojure -M:lint        # clj-kondo (errors fail)
+kbb -M:dev:run     # drive: draft → share through the actor
+kbb -M:dev:test    # the propose-only contract + store parity + CACAO crypto
+kbb -M:lint        # clj-kondo (errors fail)
 ```
 
 Demo: register an event from an activity's due-at (observe → facts) → draft
