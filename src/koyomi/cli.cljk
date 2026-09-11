@@ -4,7 +4,7 @@
   process boundary consumer that needs one event's draft status without an
   in-process require across runtimes.
 
-  Usage: `clojure -M -m koyomi.cli <ledger.edn> <event-id>` — prints the
+  Usage: `kbb -M -m koyomi.cli <ledger.edn> <event-id>` — prints the
   draft status (\"proposed\"/\"shared\"/\"none\") and exits 0 on \"shared\", 1
   otherwise (so callers can also just check the exit code).
 

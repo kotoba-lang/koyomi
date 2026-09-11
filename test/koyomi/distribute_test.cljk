@@ -1,6 +1,6 @@
 (ns koyomi.distribute-test
   "koyomi.distribute's Resend request-building, proven with a stubbed
-  :http-fn -- zero real network/credentials, so `clojure -M:dev:test` stays
+  :http-fn -- zero real network/credentials, so `kbb -M:dev:test` stays
   fully runnable offline. The one real send against Resend is a separate,
   manual live-verification step, never part of this automated suite."
   (:require [clojure.test :refer [deftest is testing]]
