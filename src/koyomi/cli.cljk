@@ -10,7 +10,7 @@
 
   <ledger.edn> holds the same shape as `koyomi.store/demo-data`'s :drafts map
   (at minimum {:drafts {\"<event-id>\" {:status :shared}}})."
-  (:require [clojure.edn :as edn]
+  (:require [kotoba.lang.edn :as edn]
             [koyomi.query :as query]
             [koyomi.store :as store]))
 
