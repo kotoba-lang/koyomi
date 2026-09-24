@@ -44,7 +44,7 @@
   against them, by design (a real deployment must populate
   `:calendar/attendees` with real email addresses for both the ICS ATTENDEE
   lines and this real send path to be meaningful)."
-  (:require [json.data-json :as json]
+  (:require [kotoba.bytes :as kbytes] [json.data-json :as json]
             [koyomi.scheduleport :as scheduleport]
             [koyomi.store :as store]
             [mail.message :as message]
@@ -79,7 +79,7 @@
   `;method=REQUEST`)."
   [ics]
   {:filename "invite.ics"
-   :content (.encodeToString (java.util.Base64/getEncoder) (.getBytes ^String ics "UTF-8"))
+   :content (kbytes/base64-encode (.getBytes ^String ics "UTF-8"))
    :content_type "text/calendar; charset=utf-8"})
 
 (defn share-message
