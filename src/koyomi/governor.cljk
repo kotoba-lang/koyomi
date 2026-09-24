@@ -54,7 +54,7 @@
       :first-contact? attendee on the event also forces high-stakes (even at
       :event/draft) — mirrors tayori's contact model, applied to invitees
       instead of message recipients."
-  (:require [clojure.set :as set]
+  (:require [kotoba.lang.coll :as set]
             [calendar.model :as cal]
             [koyomi.store :as store]))
 

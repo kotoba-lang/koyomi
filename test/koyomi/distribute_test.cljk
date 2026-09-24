@@ -3,7 +3,7 @@
   :http-fn -- zero real network/credentials, so `kbb -M:dev:test` stays
   fully runnable offline. The one real send against Resend is a separate,
   manual live-verification step, never part of this automated suite."
-  (:require [kotoba.test :refer [deftest is testing]]
+  (:require [kotoba.bytes :as kbytes] [kotoba.test :refer [deftest is testing]]
             [json.data-json :as json]
             [koyomi.distribute :as distribute]
             [koyomi.scheduleport :as scheduleport]
@@ -38,8 +38,7 @@
           (is (= "invite.ics" (:filename attachment)))
           (is (= "text/calendar; charset=utf-8" (:content_type attachment)))
           (testing "content decodes back to the exact already-built ICS string"
-            (is (= ics (String. (.decode (java.util.Base64/getDecoder) ^String (:content attachment))
-                                "UTF-8")))))))))
+            (is (= ics (kbytes/utf8-string (kbytes/base64-decode-bytes ^String (:content attachment)))))))))))
 
 (deftest send-invite-throws-on-non-2xx
   (is (thrown-with-msg?
