@@ -28,7 +28,7 @@
   raw-invitee-contents-at-rest requirement beyond the event itself: the
   ledger records dispositions and bases, not full invite bodies (anti-
   surveillance, same charter as kekkai's/tayori's ledgers)."
-  (:require #?(:clj  [clojure.edn :as edn]
+  (:require #?(:clj  [kotoba.lang.edn :as edn]
                :cljs [cljs.reader :as edn])
             [kotoba.lang.text :as str]
             [calendar.model :as cal]
