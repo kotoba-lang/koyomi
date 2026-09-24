@@ -4,6 +4,10 @@
  ;; kekkai/tayori ride on; a schedule-sharing control plane is just another
  ;; sealed-intelligence ⊣ independent-governor StateGraph.
  :deps {
+        ;; kotoba.test (clojure.test-compatible surface), not clojure.test --
+        ;; scripts/migrate-clojure-test-to-kotoba-test.cljk. Explicit floor.
+        io.github.kotoba-lang/test {:git/url "https://github.com/kotoba-lang/test.git"
+                                    :git/sha "2ab4885f99fd25552d380d0f6b0b54c5a72eb7ae"}
         ;; kotoba.bytes replaced java.util.Base64 here (2026-09-24). An explicit
         ;; floor: tools.deps takes the NEWEST sha it is shown.
         io.github.kotoba-lang/bytes {:git/sha "e28a3bb010f240451dd8be22b087c920633ec28d"}
