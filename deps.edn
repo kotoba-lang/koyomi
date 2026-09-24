@@ -4,6 +4,9 @@
  ;; kekkai/tayori ride on; a schedule-sharing control plane is just another
  ;; sealed-intelligence ⊣ independent-governor StateGraph.
  :deps {
+        ;; kotoba.bytes replaced java.util.Base64 here (2026-09-24). An explicit
+        ;; floor: tools.deps takes the NEWEST sha it is shown.
+        io.github.kotoba-lang/bytes {:git/sha "e28a3bb010f240451dd8be22b087c920633ec28d"}
         ;; kotoba.lang.text, not clojure.string. Pinned as an explicit floor:
         ;; tools.deps takes the NEWEST sha it is shown, so without a floor here
         ;; this repo silently rides whatever a sibling happens to name.
