@@ -1,5 +1,5 @@
 (ns koyomi.query-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.test :refer [deftest is testing]]
             [koyomi.query :as query]
             [koyomi.store :as store]))
 
