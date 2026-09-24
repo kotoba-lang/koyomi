@@ -79,7 +79,7 @@
   `;method=REQUEST`)."
   [ics]
   {:filename "invite.ics"
-   :content (kbytes/base64-encode (.getBytes ^String ics "UTF-8"))
+   :content (kbytes/base64-encode (kbytes/utf8-bytes ^String ics))
    :content_type "text/calendar; charset=utf-8"})
 
 (defn share-message
