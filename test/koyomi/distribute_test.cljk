@@ -3,7 +3,7 @@
   :http-fn -- zero real network/credentials, so `kbb -M:dev:test` stays
   fully runnable offline. The one real send against Resend is a separate,
   manual live-verification step, never part of this automated suite."
-  (:require [kotoba.bytes :as kbytes] [kotoba.test :refer [deftest is testing]]
+  (:require [kotoba.lang.error :as kerror] [kotoba.bytes :as kbytes] [kotoba.test :refer [deftest is testing]]
             [json.data-json :as json]
             [koyomi.distribute :as distribute]
             [koyomi.scheduleport :as scheduleport]
@@ -42,7 +42,7 @@
 
 (deftest send-invite-throws-on-non-2xx
   (is (thrown-with-msg?
-       clojure.lang.ExceptionInfo
+       kerror/ExceptionInfo
        #"Resend send failed"
        (let [content (test-content)
              ics (scheduleport/ics-string content)
@@ -74,5 +74,5 @@
     (let [st (store/seed-db)
           sp (distribute/resend-scheduleport st "ops@mail.itonami.cloud"
                                              {:http-fn (fn [_] {:status 200 :body "{\"id\":\"x\"}"})})]
-      (is (thrown? clojure.lang.ExceptionInfo
+      (is (thrown? kerror/ExceptionInfo
                   (scheduleport/share! sp "ev-board" (store/event st "ev-board")))))))
